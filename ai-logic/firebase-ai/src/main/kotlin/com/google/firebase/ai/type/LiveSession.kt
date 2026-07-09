@@ -69,10 +69,15 @@ import kotlinx.serialization.encodeToString
 @OptIn(ExperimentalSerializationApi::class)
 public class LiveSession
 internal constructor(
-  private val session: DefaultClientWebSocketSession,
+  @kotlin.jvm.Volatile private var session: DefaultClientWebSocketSession,
   @Blocking private val blockingDispatcher: CoroutineContext,
   private var audioHelper: AudioHelper? = null,
   private val firebaseApp: FirebaseApp,
+  private val connectionFactory:
+    (suspend (SessionResumptionConfig?) -> DefaultClientWebSocketSession)? =
+    null,
+  private val hasFunction: ((FunctionCallPart) -> Boolean)? = null,
+  private val executeFunction: (suspend (FunctionCallPart) -> FunctionResponsePart)? = null
 ) {
   /**
    * Coroutine scope that we batch data on for network related behavior.
@@ -313,8 +318,17 @@ internal constructor(
       // TODO(b/410059569): Remove when fixed
       flow {
           while (true) {
-            val response = session.incoming.tryReceive()
-            if (response.isClosed || !startedReceiving.get()) break
+            val currentSession = session
+            val response = currentSession.incoming.tryReceive()
+            if (!startedReceiving.get()) break
+            if (response.isClosed) {
+              if (currentSession === session) {
+                break
+              } else {
+                delay(0)
+                continue
+              }
+            }
             response
               .getOrNull()
               ?.let {
@@ -492,6 +506,32 @@ internal constructor(
     }
   }
 
+  /**
+   * Resumes an existing live session with the server.
+   *
+   * This closes the current WebSocket connection and establishes a new one using the same
+   * configuration (URI, headers, model, system instruction, tools, etc.) as the original session.
+   *
+   * @param sessionResumption The configuration for session resumption, such as the handle to the
+   * previous session state to restore.
+   */
+  @JvmOverloads
+  public suspend fun resumeSession(sessionResumption: SessionResumptionConfig? = null) {
+    if (connectionFactory == null) {
+      throw IllegalStateException("resumeSession is not supported on this instance.")
+    }
+
+    val newSession = connectionFactory.invoke(sessionResumption)
+    val oldSession = session
+    this.session = newSession
+
+    try {
+      oldSession.close()
+    } catch (e: Exception) {
+      // ignore
+    }
+  }
+
   /** Listen to the user's microphone and send the data to the model. */
   private fun recordUserAudio() {
     // Buffer the recording so we can keep recording while data is sent to the server
@@ -542,6 +582,14 @@ internal constructor(
               // It's fine to suspend here since you can't have a function call running concurrently
               // with an audio response
               sendFunctionResponse(it.functionCalls.map(functionCallHandler).toList())
+            } else if (
+              hasFunction != null &&
+                executeFunction != null &&
+                it.functionCalls.all { f -> hasFunction.invoke(f) }
+            ) {
+              sendFunctionResponse(
+                it.functionCalls.map { call -> executeFunction.invoke(call) }.toList()
+              )
             } else {
               Log.w(
                 TAG,

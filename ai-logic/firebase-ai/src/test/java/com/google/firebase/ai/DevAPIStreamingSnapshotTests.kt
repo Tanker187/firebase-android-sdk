@@ -67,6 +67,22 @@ internal class DevAPIStreamingSnapshotTests {
     }
 
   @Test
+  fun `streaming with finish message returns correctly`() =
+    goldenDevAPIStreamingFile("streaming-success-finish-message.txt") {
+      val responses = model.generateContentStream("prompt")
+
+      withTimeout(testTimeout) {
+        val responseList = responses.toList()
+        responseList.isEmpty() shouldBe false
+        responseList.last().candidates.first().apply {
+          finishReason shouldBe FinishReason.STOP
+          finishMessage shouldBe "Finished successfully"
+        }
+        responseList.last().modelVersion shouldStartWith "gemini-"
+      }
+    }
+
+  @Test
   fun `long reply`() =
     goldenDevAPIStreamingFile("streaming-success-basic-reply-long.txt") {
       val responses = model.generateContentStream("prompt")
@@ -78,6 +94,7 @@ internal class DevAPIStreamingSnapshotTests {
           finishReason shouldBe FinishReason.STOP
           content.parts.isEmpty() shouldBe false
         }
+        responseList.last().modelVersion shouldStartWith "gemini-"
       }
     }
 
@@ -95,6 +112,7 @@ internal class DevAPIStreamingSnapshotTests {
           finishReason shouldBe FinishReason.STOP
           content.parts.isEmpty() shouldBe false
         }
+        responseList.last().modelVersion shouldStartWith "gemini-"
       }
     }
 
@@ -114,6 +132,7 @@ internal class DevAPIStreamingSnapshotTests {
           it.thoughtSignature.shouldNotBeNull()
           it.thoughtSignature.shouldStartWith("CiIBVKhc7vB")
         }
+        responseList.last().modelVersion shouldStartWith "gemini-"
       }
     }
 

@@ -33,6 +33,7 @@ import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldStartWith
 import io.ktor.http.HttpStatusCode
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.withTimeout
@@ -52,6 +53,7 @@ internal class DevAPIUnarySnapshotTests {
         response.candidates.shouldNotBeEmpty()
         response.candidates.first().finishReason shouldBe FinishReason.STOP
         response.candidates.first().content.parts.shouldNotBeEmpty()
+        response.modelVersion shouldStartWith "gemini-"
       }
     }
 
@@ -79,6 +81,7 @@ internal class DevAPIUnarySnapshotTests {
         response.candidates.shouldNotBeEmpty()
         response.candidates.first().finishReason shouldBe FinishReason.STOP
         response.candidates.first().content.parts.shouldNotBeEmpty()
+        response.modelVersion shouldStartWith "gemini-"
       }
     }
 
@@ -94,6 +97,7 @@ internal class DevAPIUnarySnapshotTests {
           it.startIndex.shouldNotBeNull()
           it.endIndex.shouldNotBeNull()
         }
+        response.modelVersion shouldStartWith "gemini-"
       }
     }
 
@@ -136,6 +140,7 @@ internal class DevAPIUnarySnapshotTests {
 
         groundingMetadata.groundingChunks.shouldNotBeEmpty()
         groundingMetadata.groundingChunks.forEach { it.web.shouldBeNull() }
+        response.modelVersion shouldStartWith "gemini-"
       }
     }
 
@@ -225,6 +230,22 @@ internal class DevAPIUnarySnapshotTests {
         }
         // There's no text in the response
         response.text.shouldBeNull()
+      }
+    }
+
+  @Test
+  fun `failure with finish message and no content returns correctly`() =
+    goldenDevAPIUnaryFile("unary-failure-with-message-no-content.json") {
+      withTimeout(testTimeout) {
+        shouldThrow<ResponseStoppedException> { model.generateContent("prompt") } should
+          {
+            val response = it.response
+            response.candidates.shouldNotBeEmpty()
+            val candidate = response.candidates.first()
+            candidate.finishReason shouldBe FinishReason.OTHER
+            candidate.finishMessage shouldBe
+              "Model failed to generate content due to internal error."
+          }
       }
     }
 }

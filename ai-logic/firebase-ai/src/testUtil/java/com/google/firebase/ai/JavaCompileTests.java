@@ -25,11 +25,16 @@ import com.google.firebase.ai.ImagenModel;
 import com.google.firebase.ai.InferenceMode;
 import com.google.firebase.ai.LiveGenerativeModel;
 import com.google.firebase.ai.OnDeviceConfig;
+import com.google.firebase.ai.TemplateChat;
+import com.google.firebase.ai.TemplateGenerativeModel;
 import com.google.firebase.ai.java.ChatFutures;
 import com.google.firebase.ai.java.GenerativeModelFutures;
 import com.google.firebase.ai.java.ImagenModelFutures;
 import com.google.firebase.ai.java.LiveModelFutures;
 import com.google.firebase.ai.java.LiveSessionFutures;
+import com.google.firebase.ai.java.TemplateChatFutures;
+import com.google.firebase.ai.java.TemplateGenerativeModelFutures;
+import com.google.firebase.ai.type.AspectRatio;
 import com.google.firebase.ai.type.BlockReason;
 import com.google.firebase.ai.type.Candidate;
 import com.google.firebase.ai.type.Citation;
@@ -47,7 +52,9 @@ import com.google.firebase.ai.type.GenerationConfig;
 import com.google.firebase.ai.type.HarmCategory;
 import com.google.firebase.ai.type.HarmProbability;
 import com.google.firebase.ai.type.HarmSeverity;
+import com.google.firebase.ai.type.ImageConfig;
 import com.google.firebase.ai.type.ImagePart;
+import com.google.firebase.ai.type.ImageSize;
 import com.google.firebase.ai.type.ImagenBackgroundMask;
 import com.google.firebase.ai.type.ImagenEditMode;
 import com.google.firebase.ai.type.ImagenEditingConfig;
@@ -64,6 +71,7 @@ import com.google.firebase.ai.type.LiveServerToolCall;
 import com.google.firebase.ai.type.LiveServerToolCallCancellation;
 import com.google.firebase.ai.type.MediaData;
 import com.google.firebase.ai.type.ModalityTokenCount;
+import com.google.firebase.ai.type.MultiSpeakerVoiceConfig;
 import com.google.firebase.ai.type.Part;
 import com.google.firebase.ai.type.PromptFeedback;
 import com.google.firebase.ai.type.PublicPreviewAPI;
@@ -71,6 +79,7 @@ import com.google.firebase.ai.type.ResponseModality;
 import com.google.firebase.ai.type.RetrievalConfig;
 import com.google.firebase.ai.type.SafetyRating;
 import com.google.firebase.ai.type.Schema;
+import com.google.firebase.ai.type.SpeakerVoiceConfig;
 import com.google.firebase.ai.type.SpeechConfig;
 import com.google.firebase.ai.type.TextPart;
 import com.google.firebase.ai.type.ToolConfig;
@@ -117,6 +126,14 @@ public class JavaCompileTests {
     LiveModelFutures liveFutures = LiveModelFutures.from(live);
     testFutures(futures);
     testLiveFutures(liveFutures);
+
+    TemplateGenerativeModel templateModel = vertex.templateGenerativeModel();
+    TemplateGenerativeModelFutures templateFutures =
+        TemplateGenerativeModelFutures.from(templateModel);
+    TemplateChat templateChat =
+        templateModel.startChat("fake-template", Collections.emptyMap(), Collections.emptyList());
+    TemplateChatFutures templateChatFutures = TemplateChatFutures.from(templateChat);
+    testTemplateChatFutures(templateChatFutures);
   }
 
   private GenerationConfig getGenerationConfig() {
@@ -130,27 +147,40 @@ public class JavaCompileTests {
         .setPresencePenalty(2.0F)
         .setStopSequences(List.of("foo", "bar"))
         .setResponseMimeType("image/jxl")
-        .setResponseModalities(List.of(ResponseModality.TEXT, ResponseModality.TEXT))
+        .setResponseModalities(List.of(ResponseModality.AUDIO))
         .setResponseSchema(getSchema())
+        .setImageConfig(
+            ImageConfig.builder()
+                .setAspectRatio(AspectRatio.LANDSCAPE_21x9)
+                .setImageSize(ImageSize.SIZE_512)
+                .build())
+        .setSpeechConfig(new SpeechConfig(new Voice("Charon"), "en-US"))
         .build();
   }
 
   private Schema getSchema() {
     return Schema.obj(
         Map.of(
-            "foo", Schema.numInt(),
-            "bar", Schema.numInt("Some integer"),
-            "baz", Schema.numInt("Some integer", false),
-            "qux", Schema.numDouble(),
-            "quux", Schema.numFloat("Some floating point number"),
-            "xyzzy", Schema.array(Schema.numInt(), "A list of integers"),
-            "fee", Schema.numLong(),
+            "foo",
+            Schema.numInt(),
+            "bar",
+            Schema.numInt("Some integer"),
+            "baz",
+            Schema.numInt("Some integer", false),
+            "qux",
+            Schema.numDouble(),
+            "quux",
+            Schema.numFloat("Some floating point number"),
+            "xyzzy",
+            Schema.array(Schema.numInt(), "A list of integers"),
+            "fee",
+            Schema.numLong(),
             "ber",
-                Schema.obj(
-                    Map.of(
-                        "bez", Schema.array(Schema.numDouble("Nullable double", true)),
-                        "qez", Schema.enumeration(List.of("A", "B", "C"), "One of 3 letters"),
-                        "qeez", Schema.str("A funny string")))));
+            Schema.obj(
+                Map.of(
+                    "bez", Schema.array(Schema.numDouble("Nullable double", true)),
+                    "qez", Schema.enumeration(List.of("A", "B", "C"), "One of 3 letters"),
+                    "qeez", Schema.str("A funny string")))));
   }
 
   private LiveGenerationConfig getLiveConfig() {
@@ -175,6 +205,18 @@ public class JavaCompileTests {
         new ImagenEditingConfig(ImagenEditMode.OUTPAINT, 25));
     ImagenMaskReference.generateMaskAndPadForOutpainting(
         new ImagenInlineImage(new byte[0], ""), new Dimensions(0, 0));
+  }
+
+  private void testSpeechConfig() {
+    SpeechConfig singleSpeechConfig = new SpeechConfig(new Voice("Charon"), "en-US");
+
+    MultiSpeakerVoiceConfig multiSpeakerConfig =
+        new MultiSpeakerVoiceConfig(
+            List.of(
+                new SpeakerVoiceConfig("Joe", new Voice("Charon")),
+                new SpeakerVoiceConfig("Jane", new Voice("Charon"))));
+    SpeechConfig multiSpeechConfig = new SpeechConfig(multiSpeakerConfig);
+    SpeechConfig multiSpeechConfigWithLang = new SpeechConfig(multiSpeakerConfig, "en-US");
   }
 
   private void testFutures(GenerativeModelFutures futures) throws Exception {
@@ -205,6 +247,43 @@ public class JavaCompileTests {
         },
         executor);
     Publisher<GenerateContentResponse> responsePublisher = futures.generateContentStream(content);
+    responsePublisher.subscribe(
+        new Subscriber<GenerateContentResponse>() {
+          private boolean complete = false;
+
+          @Override
+          public void onSubscribe(Subscription s) {
+            s.request(Long.MAX_VALUE);
+          }
+
+          @Override
+          public void onNext(GenerateContentResponse response) {
+            Assert.assertFalse(complete);
+            validateGenerateContentResponse(response);
+          }
+
+          @Override
+          public void onError(Throwable t) {
+            // Ignore
+          }
+
+          @Override
+          public void onComplete() {
+            complete = true;
+          }
+        });
+  }
+
+  private void testTemplateChatFutures(TemplateChatFutures futures) throws Exception {
+    Content content =
+        new Content.Builder()
+            .setParts(new ArrayList<>())
+            .addText("Fake prompt")
+            .setRole("user")
+            .build();
+    ListenableFuture<GenerateContentResponse> generateResponse = futures.sendMessage(content);
+    validateGenerateContentResponse(generateResponse.get());
+    Publisher<GenerateContentResponse> responsePublisher = futures.sendMessageStream(content);
     responsePublisher.subscribe(
         new Subscriber<GenerateContentResponse>() {
           private boolean complete = false;
